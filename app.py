@@ -20,7 +20,7 @@ class StockfishEngine:
         self.init_error = None
         self._start_process()
 
-    def _start_process(self):
+    def _start_process(self, attempt_build=True):
         self.init_error = None
 
         # Try local path first
@@ -30,8 +30,22 @@ class StockfishEngine:
             if system_path:
                 self.path = system_path
                 logger.info(f"Using system stockfish at {self.path}")
-            else:
-                self.init_error = f"Stockfish binary not found. Please run ./setup.sh to build it, or install stockfish on your system."
+            elif attempt_build:
+                logger.info("Stockfish not found. Attempting to build automatically via setup.sh...")
+                try:
+                    # Run setup.sh and wait for it to complete
+                    result = subprocess.run(["bash", "./setup.sh"], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        logger.info("Automatic build successful.")
+                        # Recurse once without further build attempts
+                        return self._start_process(attempt_build=False)
+                    else:
+                        logger.error(f"Automatic build failed: {result.stderr}")
+                except Exception as build_err:
+                    logger.error(f"Error during automatic build: {build_err}")
+
+            if not os.path.exists(self.path):
+                self.init_error = f"Stockfish binary not found at {self.path}. Please run ./setup.sh manually."
                 logger.error(self.init_error)
                 self.process = None
                 return
@@ -85,7 +99,7 @@ class StockfishEngine:
 
             self.send_command(f"position fen {fen}")
             self.send_command(f"go depth {depth}")
-            
+
             best_move = None
             import time
             start_time = time.time()
