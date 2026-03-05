@@ -12,43 +12,37 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 class StockfishEngine:
-    def __init__(self, path="./Stockfish/src/stockfish"):
-        self.default_path = os.path.abspath(path)
-        self.path = self.default_path
+    def __init__(self, path="/usr/games/stockfish"):
+        self.path = path
         self.process = None
         self.lock = threading.Lock()
         self.init_error = None
         self._start_process()
 
-    def _start_process(self, attempt_build=True):
+    def _start_process(self):
         self.init_error = None
 
-        # Try local path first
-        if not os.path.exists(self.path):
-            logger.warning(f"Stockfish not found at {self.path}. Searching in system PATH.")
-            system_path = shutil.which("stockfish")
-            if system_path:
-                self.path = system_path
-                logger.info(f"Using system stockfish at {self.path}")
-            elif attempt_build:
-                logger.info("Stockfish not found. Attempting to build automatically via setup.sh...")
-                try:
-                    # Run setup.sh and wait for it to complete
-                    result = subprocess.run(["bash", "./setup.sh"], capture_output=True, text=True)
-                    if result.returncode == 0:
-                        logger.info("Automatic build successful.")
-                        # Recurse once without further build attempts
-                        return self._start_process(attempt_build=False)
-                    else:
-                        logger.error(f"Automatic build failed: {result.stderr}")
-                except Exception as build_err:
-                    logger.error(f"Error during automatic build: {build_err}")
+        # Paths to check for stockfish
+        possible_paths = [
+            self.path,
+            "/usr/bin/stockfish",
+            shutil.which("stockfish"),
+            os.path.abspath("./Stockfish/src/stockfish")
+        ]
 
-            if not os.path.exists(self.path):
-                self.init_error = f"Stockfish binary not found at {self.path}. Please run ./setup.sh manually."
-                logger.error(self.init_error)
-                self.process = None
-                return
+        found_path = None
+        for p in possible_paths:
+            if p and os.path.exists(p):
+                found_path = p
+                break
+
+        if not found_path:
+            self.init_error = "Stockfish binary not found. Please install it using 'sudo apt-get install stockfish'."
+            logger.error(self.init_error)
+            self.process = None
+            return
+
+        self.path = found_path
 
         try:
             self.process = subprocess.Popen(
