@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stockfish 16 God Mode - Chess Sandbox</title>
+    <!-- CSS Dependencies -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+    <style>
+        :root {
+            --primary-bg: #121212;
+            --secondary-bg: #1e1e1e;
+            --accent-color: #4CAF50;
+            --text-color: #e0e0e0;
+            --border-color: #333;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: minmax(400px, 600px) 350px;
+            gap: 24px;
+            max-width: 1000px;
+            width: 100%;
+        }
+        @media (max-width: 800px) {
+            .container { grid-template-columns: 1fr; }
+        }
+        .board-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .controls-section {
+            background-color: var(--secondary-bg);
+            padding: 24px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: fit-content;
+        }
+        h1 {
+            color: var(--accent-color);
+            margin: 0 0 20px 0;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        label {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+        }
+        select, input, button {
+            width: 100%;
+            padding: 10px 14px;
+            background-color: #2a2a2a;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        button {
+            background-color: var(--accent-color);
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+            color: #000;
+        }
+        button:hover { background-color: #66bb6a; transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
+        button.secondary { background-color: #444; color: white; }
+        button.secondary:hover { background-color: #555; }
+        button.danger { background-color: #f44336; color: white; }
+        button.danger:hover { background-color: #d32f2f; }
+
+        .status-box {
+            background: #000;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 12px;
+            height: 120px;
+            overflow-y: auto;
+            border: 1px solid #222;
+        }
+        #fen-display {
+            background: #000;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            word-break: break-all;
+            color: #aaa;
+            border: 1px solid #222;
+            cursor: pointer;
+        }
+        #fen-display:hover { color: #fff; border-color: #444; }
+
+        .flex-row { display: flex; gap: 8px; }
+        .flex-row > * { flex: 1; }
+
+        /* Custom scrollbar */
+        .status-box::-webkit-scrollbar { width: 6px; }
+        .status-box::-webkit-scrollbar-track { background: #000; }
+        .status-box::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+        .god-mode-badge {
+            font-size: 10px;
+            background: #ff9800;
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 800;
+            vertical-align: middle;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="board-section">
+            <div id="myBoard"></div>
+            <div class="control-group">
+                <label>Current Position (FEN)</label>
+                <div id="fen-display" title="Click to copy">rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1</div>
+            </div>
+        </div>
+
+        <div class="controls-section">
+            <h1>Stockfish 16 <span class="god-mode-badge">GOD MODE</span></h1>
+
+            <div class="control-group">
+                <label>Engine Console</label>
+                <div id="status" class="status-box">Loading engine assets...</div>
+            </div>
+
+            <div class="control-group">
+                <label>Board Actions</label>
+                <div class="flex-row">
+                    <button class="secondary" onclick="board.start()">Reset</button>
+                    <button class="secondary" onclick="board.clear()">Clear</button>
+                    <button class="secondary" onclick="board.flip()">Flip</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Active Side</label>
+                <select id="engineColor">
+                    <option value="none">Manual Mode</option>
+                    <option value="w">Stockfish (White)</option>
+                    <option value="b">Stockfish (Black)</option>
+                    <option value="both">Stockfish vs Stockfish</option>
+                </select>
+                <button onclick="requestMove()">Force Engine Move</button>
+            </div>
+
+            <div class="control-group">
+                <label>Engine Config</label>
+                <div class="flex-row">
+                    <div>
+                        <small>Depth</small>
+                        <input type="number" id="depth" value="16" min="1" max="30">
+                    </div>
+                    <div>
+                        <small>Hash (MB)</small>
+                        <input type="number" id="hash" value="32" min="16" max="512">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Rules & Settings</label>
+                <p style="font-size: 12px; color: #777; margin: 0;">Drag pieces anywhere to set custom positions. Stockfish will play from the exact visual layout.</p>
+                <button class="danger" onclick="stopEngine()">Stop Engine</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+
+    <script>
+        // --- GOD MODE CORE ---
+        let board = null;
+        let stockfish = null;
+        let engineReady = false;
+        let isThinking = false;
+        let activeTurn = 'w';
+
+        function log(msg) {
+            const status = document.getElementById('status');
+            const line = document.createElement('div');
+            line.textContent = `> ${msg}`;
+            status.appendChild(line);
+            status.scrollTop = status.scrollHeight;
+        }
+
+        function initEngine() {
+            log("Initializing Stockfish 16 (NNUE Single)...");
+            // Use CDN worker
+            stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js');
+
+            stockfish.onmessage = function(e) {
+                const line = e.data;
+
+                if (line === 'uciok') {
+                    engineReady = true;
+                    log("Engine ready.");
+                    stockfish.postMessage('setoption name Hash value ' + document.getElementById('hash').value);
+                } else if (line === 'readyok') {
+                    // Ready for input
+                } else if (line.startsWith('bestmove')) {
+                    isThinking = false;
+                    const move = line.split(' ')[1];
+                    if (move && move !== '(none)') {
+                        handleEngineMove(move);
+                    } else {
+                        log("Engine: No moves found for this position.");
+                    }
+                } else if (line.startsWith('info depth') && !line.includes('lowerbound')) {
+                    // Extract score and depth for status
+                    // const parts = line.split(' ');
+                    // log(`Thinking... depth ${parts[2]}`);
+                }
+            };
+
+            stockfish.postMessage('uci');
+            stockfish.postMessage('isready');
+        }
+
+        // Generate FEN manually from board state to bypass chess.js rules
+        function generateGodFen() {
+            const pos = board.position();
+            let fen = "";
+
+            for (let r = 8; r >= 1; r--) {
+                let empty = 0;
+                for (let c = 0; c < 8; c++) {
+                    const col = String.fromCharCode(97 + c);
+                    const piece = pos[col + r];
+                    if (!piece) {
+                        empty++;
+                    } else {
+                        if (empty > 0) {
+                            fen += empty;
+                            empty = 0;
+                        }
+                        let pChar = piece[1].toLowerCase();
+                        if (piece[0] === 'w') pChar = pChar.toUpperCase();
+                        fen += pChar;
+                    }
+                }
+                if (empty > 0) fen += empty;
+                if (r > 1) fen += "/";
+            }
+
+            // God Mode assumes all castling rights and no en passant for custom positions
+            // unless we build a full editor. For simplicity:
+            fen += ` ${activeTurn} KQkq - 0 1`;
+            return fen;
+        }
+
+        function updateFenDisplay() {
+            const fen = generateGodFen();
+            document.getElementById('fen-display').textContent = fen;
+            return fen;
+        }
+
+        function handleEngineMove(move) {
+            const from = move.substring(0, 2);
+            const to = move.substring(2, 4);
+            const promotion = move.length > 4 ? move.substring(4, 5) : null;
+
+            log(`Engine moves: ${move}`);
+
+            // Execute on board
+            board.move(`${from}-${to}`);
+
+            // Handle promotion visually
+            if (promotion) {
+                const pos = board.position();
+                pos[to] = activeTurn + promotion.toUpperCase();
+                board.position(pos);
+            }
+
+            // Switch turn
+            activeTurn = activeTurn === 'w' ? 'b' : 'w';
+            updateFenDisplay();
+
+            // Check if engine should keep playing
+            setTimeout(checkEngineTurn, 250);
+        }
+
+        function requestMove() {
+            if (!engineReady || isThinking) return;
+
+            const fen = updateFenDisplay();
+            const depth = document.getElementById('depth').value;
+
+            isThinking = true;
+            stockfish.postMessage(`position fen ${fen}`);
+            stockfish.postMessage(`go depth ${depth}`);
+            log(`Engine thinking (depth ${depth})...`);
+        }
+
+        function checkEngineTurn() {
+            const engineColor = document.getElementById('engineColor').value;
+            if (engineColor === 'both' || engineColor === activeTurn) {
+                requestMove();
+            }
+        }
+
+        function stopEngine() {
+            if (stockfish) {
+                stockfish.postMessage('stop');
+                isThinking = false;
+                log("Engine stopped.");
+            }
+        }
+
+        // Initialize Board
+        board = Chessboard('myBoard', {
+            draggable: true,
+            dropOffBoard: 'trash',
+            sparePieces: true,
+            position: 'start',
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+            onDrop: function(source, target, piece, newPos, oldPos, orientation) {
+                // Wait for animation
+                setTimeout(() => {
+                    updateFenDisplay();
+                    checkEngineTurn();
+                }, 50);
+            },
+            onChange: function() {
+                updateFenDisplay();
+            }
+        });
+
+        $(window).resize(board.resize);
+
+        // UI Listeners
+        document.getElementById('engineColor').addEventListener('change', checkEngineTurn);
+        document.getElementById('hash').addEventListener('change', function() {
+            if (engineReady) stockfish.postMessage('setoption name Hash value ' + this.value);
+        });
+        document.getElementById('fen-display').addEventListener('click', function() {
+            navigator.clipboard.writeText(this.textContent);
+            log("FEN copied to clipboard.");
+        });
+
+        initEngine();
+        updateFenDisplay();
+
+    </script>
+</body>
+</html>
