@@ -53,10 +53,15 @@
         }
         h1 {
             color: var(--accent-color);
-            margin: 0 0 20px 0;
+            margin: 0 0 5px 0;
             font-size: 24px;
             font-weight: 700;
             letter-spacing: -0.5px;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 15px;
         }
         .control-group {
             display: flex;
@@ -64,11 +69,11 @@
             gap: 8px;
         }
         label {
-            font-size: 13px;
-            font-weight: 600;
+            font-size: 11px;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #888;
+            letter-spacing: 1px;
+            color: #666;
         }
         select, input, button {
             width: 100%;
@@ -99,18 +104,19 @@
             border-radius: 6px;
             padding: 12px;
             font-family: 'Fira Code', 'Courier New', monospace;
-            font-size: 12px;
-            height: 120px;
+            font-size: 11px;
+            height: 100px;
             overflow-y: auto;
             border: 1px solid #222;
+            line-height: 1.4;
         }
         #fen-display {
             background: #000;
             padding: 8px;
             border-radius: 4px;
-            font-size: 11px;
+            font-size: 10px;
             word-break: break-all;
-            color: #aaa;
+            color: #888;
             border: 1px solid #222;
             cursor: pointer;
         }
@@ -118,11 +124,6 @@
 
         .flex-row { display: flex; gap: 8px; }
         .flex-row > * { flex: 1; }
-
-        /* Custom scrollbar */
-        .status-box::-webkit-scrollbar { width: 6px; }
-        .status-box::-webkit-scrollbar-track { background: #000; }
-        .status-box::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 
         .god-mode-badge {
             font-size: 10px;
@@ -133,6 +134,16 @@
             font-weight: 800;
             vertical-align: middle;
             margin-left: 8px;
+        }
+        .offline-warning {
+            background-color: #422;
+            color: #f88;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #633;
+            display: none;
         }
     </style>
 </head>
@@ -147,15 +158,27 @@
         </div>
 
         <div class="controls-section">
-            <h1>Stockfish 18 <span class="god-mode-badge">GOD MODE</span></h1>
+            <div>
+                <h1>Stockfish 18 <span class="god-mode-badge">GOD MODE</span></h1>
+                <div class="subtitle">Offline-Ready Chess Sandbox</div>
+            </div>
 
-            <div class="control-group">
-                <label>Engine Console</label>
-                <div id="status" class="status-box">Loading engine assets...</div>
+            <div id="file-warning" class="offline-warning">
+                <strong>Security Alert:</strong> Browsers block Web Workers when opening HTML files directly (file://).
+                <br><br>
+                Please use a local server:
+                <br>1. Open terminal in this folder
+                <br>2. Run: <code>python -m http.server</code>
+                <br>3. Visit: <code>http://localhost:8000</code>
             </div>
 
             <div class="control-group">
-                <label>Board Actions</label>
+                <label>Engine Console</label>
+                <div id="status" class="status-box">Initializing UI...</div>
+            </div>
+
+            <div class="control-group">
+                <label>Board Control</label>
                 <div class="flex-row">
                     <button class="secondary" onclick="board.start()">Reset</button>
                     <button class="secondary" onclick="board.clear()">Clear</button>
@@ -164,7 +187,7 @@
             </div>
 
             <div class="control-group">
-                <label>Active Side</label>
+                <label>Engine Active Side</label>
                 <select id="engineColor">
                     <option value="none">Manual Mode</option>
                     <option value="w">Stockfish (White)</option>
@@ -178,20 +201,20 @@
                 <label>Engine Config</label>
                 <div class="flex-row">
                     <div>
-                        <small>Depth</small>
-                        <input type="number" id="depth" value="16" min="1" max="30">
+                        <small style="font-size: 9px; color: #555;">DEPTH</small>
+                        <input type="number" id="depth" value="18" min="1" max="30">
                     </div>
                     <div>
-                        <small>Hash (MB)</small>
-                        <input type="number" id="hash" value="32" min="16" max="512">
+                        <small style="font-size: 9px; color: #555;">HASH (MB)</small>
+                        <input type="number" id="hash" value="64" min="16" max="512">
                     </div>
                 </div>
             </div>
 
             <div class="control-group">
-                <label>Rules & Settings</label>
-                <p style="font-size: 12px; color: #777; margin: 0;">Drag pieces anywhere to set custom positions. Stockfish will play from the exact visual layout.</p>
-                <button class="danger" onclick="stopEngine()">Stop Engine</button>
+                <label>God Mode Features</label>
+                <p style="font-size: 11px; color: #666; margin: 0;">Drag/drop any piece anywhere. Trash pieces off-board. Use spare pieces below. Invalid moves are allowed.</p>
+                <button class="danger" onclick="stopEngine()">Emergency Engine Stop</button>
             </div>
         </div>
     </div>
@@ -201,7 +224,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
 
     <script>
-        // --- GOD MODE CORE ---
+        // --- CONFIG ---
+        const ENGINE_JS = 'stockfish-18-lite-single.js';
+        const PIECE_THEME = 'img/chesspieces/wikipedia/{piece}.png';
+
         let board = null;
         let stockfish = null;
         let engineReady = false;
@@ -217,35 +243,47 @@
         }
 
         function initEngine() {
-            log("Initializing Stockfish 18 Lite...");
+            log("Loading Stockfish 18...");
 
-            // For true offline use, we load from local files.
-            // Users must run a local server (e.g. python -m http.server)
-            stockfish = new Worker('stockfish-18-lite-single.js');
+            if (window.location.protocol === 'file:') {
+                document.getElementById('file-warning').style.display = 'block';
+                log("ERROR: Security restriction on file:// protocol.");
+            }
 
-            stockfish.onmessage = function(e) {
-                const line = e.data;
+            try {
+                stockfish = new Worker(ENGINE_JS);
 
-                if (line === 'uciok') {
-                    engineReady = true;
-                    log("Engine ready.");
-                    stockfish.postMessage('setoption name Hash value ' + document.getElementById('hash').value);
-                    stockfish.postMessage('setoption name UCI_Chess960 value true');
-                } else if (line === 'readyok') {
-                    // Ready
-                } else if (line.startsWith('bestmove')) {
-                    isThinking = false;
-                    const move = line.split(' ')[1];
-                    if (move && move !== '(none)') {
-                        handleEngineMove(move);
-                    } else {
-                        log("Engine: No moves found.");
+                stockfish.onmessage = function(e) {
+                    const line = e.data;
+                    if (line === 'uciok') {
+                        engineReady = true;
+                        log("Engine UCI initialized.");
+                        stockfish.postMessage('setoption name Hash value ' + document.getElementById('hash').value);
+                        stockfish.postMessage('setoption name UCI_Chess960 value true');
+                    } else if (line === 'readyok') {
+                        // Ready
+                    } else if (line.startsWith('bestmove')) {
+                        isThinking = false;
+                        const move = line.split(' ')[1];
+                        if (move && move !== '(none)') {
+                            handleEngineMove(move);
+                        } else {
+                            log("Engine: No moves found for this position.");
+                        }
                     }
-                }
-            };
+                };
 
-            stockfish.postMessage('uci');
-            stockfish.postMessage('isready');
+                stockfish.onerror = function(err) {
+                    log("Worker Error: Likely security restriction.");
+                    console.error(err);
+                };
+
+                stockfish.postMessage('uci');
+                stockfish.postMessage('isready');
+            } catch (err) {
+                log("Failed to start engine worker.");
+                console.error(err);
+            }
         }
 
         function generateGodFen() {
@@ -281,13 +319,16 @@
             const from = move.substring(0, 2);
             const to = move.substring(2, 4);
             const promotion = move.length > 4 ? move.substring(4, 5) : null;
-            log(`Engine moves: ${move}`);
+
+            log(`Move: ${move}`);
             board.move(`${from}-${to}`);
+
             if (promotion) {
                 const pos = board.position();
                 pos[to] = activeTurn + promotion.toUpperCase();
                 board.position(pos);
             }
+
             activeTurn = activeTurn === 'w' ? 'b' : 'w';
             updateFenDisplay();
             setTimeout(checkEngineTurn, 250);
@@ -300,7 +341,7 @@
             isThinking = true;
             stockfish.postMessage(`position fen ${fen}`);
             stockfish.postMessage(`go depth ${depth}`);
-            log(`Engine thinking...`);
+            log(`Thinking...`);
         }
 
         function checkEngineTurn() {
@@ -316,14 +357,16 @@
             }
         }
 
+        // Initialize Board
         board = Chessboard('myBoard', {
             draggable: true,
             dropOffBoard: 'trash',
             sparePieces: true,
             position: 'start',
-            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+            pieceTheme: PIECE_THEME,
             onDrop: function() {
                 setTimeout(() => {
+                    activeTurn = activeTurn === 'w' ? 'b' : 'w';
                     updateFenDisplay();
                     checkEngineTurn();
                 }, 50);
@@ -338,7 +381,7 @@
         });
         document.getElementById('fen-display').addEventListener('click', function() {
             navigator.clipboard.writeText(this.textContent);
-            log("FEN copied.");
+            log("FEN copied to clipboard.");
         });
 
         initEngine();
