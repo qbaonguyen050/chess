@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stockfish 16 God Mode - Chess Sandbox</title>
+    <title>Stockfish 18 God Mode - Chess Sandbox</title>
     <!-- CSS Dependencies -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
     <style>
@@ -147,7 +147,7 @@
         </div>
 
         <div class="controls-section">
-            <h1>Stockfish 16 <span class="god-mode-badge">GOD MODE</span></h1>
+            <h1>Stockfish 18 <span class="god-mode-badge">GOD MODE</span></h1>
 
             <div class="control-group">
                 <label>Engine Console</label>
@@ -217,9 +217,11 @@
         }
 
         function initEngine() {
-            log("Initializing Stockfish 16 (NNUE Single)...");
-            // Use CDN worker
-            stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js');
+            log("Initializing Stockfish 18 Lite...");
+
+            // For true offline use, we load from local files.
+            // Users must run a local server (e.g. python -m http.server)
+            stockfish = new Worker('stockfish-18-lite-single.js');
 
             stockfish.onmessage = function(e) {
                 const line = e.data;
@@ -228,20 +230,17 @@
                     engineReady = true;
                     log("Engine ready.");
                     stockfish.postMessage('setoption name Hash value ' + document.getElementById('hash').value);
+                    stockfish.postMessage('setoption name UCI_Chess960 value true');
                 } else if (line === 'readyok') {
-                    // Ready for input
+                    // Ready
                 } else if (line.startsWith('bestmove')) {
                     isThinking = false;
                     const move = line.split(' ')[1];
                     if (move && move !== '(none)') {
                         handleEngineMove(move);
                     } else {
-                        log("Engine: No moves found for this position.");
+                        log("Engine: No moves found.");
                     }
-                } else if (line.startsWith('info depth') && !line.includes('lowerbound')) {
-                    // Extract score and depth for status
-                    // const parts = line.split(' ');
-                    // log(`Thinking... depth ${parts[2]}`);
                 }
             };
 
@@ -249,23 +248,17 @@
             stockfish.postMessage('isready');
         }
 
-        // Generate FEN manually from board state to bypass chess.js rules
         function generateGodFen() {
             const pos = board.position();
             let fen = "";
-
             for (let r = 8; r >= 1; r--) {
                 let empty = 0;
                 for (let c = 0; c < 8; c++) {
                     const col = String.fromCharCode(97 + c);
                     const piece = pos[col + r];
-                    if (!piece) {
-                        empty++;
-                    } else {
-                        if (empty > 0) {
-                            fen += empty;
-                            empty = 0;
-                        }
+                    if (!piece) empty++;
+                    else {
+                        if (empty > 0) { fen += empty; empty = 0; }
                         let pChar = piece[1].toLowerCase();
                         if (piece[0] === 'w') pChar = pChar.toUpperCase();
                         fen += pChar;
@@ -274,9 +267,6 @@
                 if (empty > 0) fen += empty;
                 if (r > 1) fen += "/";
             }
-
-            // God Mode assumes all castling rights and no en passant for custom positions
-            // unless we build a full editor. For simplicity:
             fen += ` ${activeTurn} KQkq - 0 1`;
             return fen;
         }
@@ -291,44 +281,31 @@
             const from = move.substring(0, 2);
             const to = move.substring(2, 4);
             const promotion = move.length > 4 ? move.substring(4, 5) : null;
-
             log(`Engine moves: ${move}`);
-
-            // Execute on board
             board.move(`${from}-${to}`);
-
-            // Handle promotion visually
             if (promotion) {
                 const pos = board.position();
                 pos[to] = activeTurn + promotion.toUpperCase();
                 board.position(pos);
             }
-
-            // Switch turn
             activeTurn = activeTurn === 'w' ? 'b' : 'w';
             updateFenDisplay();
-
-            // Check if engine should keep playing
             setTimeout(checkEngineTurn, 250);
         }
 
         function requestMove() {
             if (!engineReady || isThinking) return;
-
             const fen = updateFenDisplay();
             const depth = document.getElementById('depth').value;
-
             isThinking = true;
             stockfish.postMessage(`position fen ${fen}`);
             stockfish.postMessage(`go depth ${depth}`);
-            log(`Engine thinking (depth ${depth})...`);
+            log(`Engine thinking...`);
         }
 
         function checkEngineTurn() {
             const engineColor = document.getElementById('engineColor').value;
-            if (engineColor === 'both' || engineColor === activeTurn) {
-                requestMove();
-            }
+            if (engineColor === 'both' || engineColor === activeTurn) requestMove();
         }
 
         function stopEngine() {
@@ -339,40 +316,33 @@
             }
         }
 
-        // Initialize Board
         board = Chessboard('myBoard', {
             draggable: true,
             dropOffBoard: 'trash',
             sparePieces: true,
             position: 'start',
             pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-            onDrop: function(source, target, piece, newPos, oldPos, orientation) {
-                // Wait for animation
+            onDrop: function() {
                 setTimeout(() => {
                     updateFenDisplay();
                     checkEngineTurn();
                 }, 50);
             },
-            onChange: function() {
-                updateFenDisplay();
-            }
+            onChange: function() { updateFenDisplay(); }
         });
 
         $(window).resize(board.resize);
-
-        // UI Listeners
         document.getElementById('engineColor').addEventListener('change', checkEngineTurn);
         document.getElementById('hash').addEventListener('change', function() {
             if (engineReady) stockfish.postMessage('setoption name Hash value ' + this.value);
         });
         document.getElementById('fen-display').addEventListener('click', function() {
             navigator.clipboard.writeText(this.textContent);
-            log("FEN copied to clipboard.");
+            log("FEN copied.");
         });
 
         initEngine();
         updateFenDisplay();
-
     </script>
 </body>
 </html>
